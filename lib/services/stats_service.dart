@@ -14,7 +14,57 @@ class ExerciseHistoryEntry {
   final ExerciseRecord exercise;
 }
 
+enum StatsRange {
+  week,
+  month,
+  year,
+  all,
+}
+
 class StatsService {
+  static String rangeLabel(StatsRange range) {
+    switch (range) {
+      case StatsRange.week:
+        return '本周';
+      case StatsRange.month:
+        return '本月';
+      case StatsRange.year:
+        return '本年';
+      case StatsRange.all:
+        return '全部';
+    }
+  }
+
+  static List<WorkoutRecord> filterRecordsByRange(
+    List<WorkoutRecord> records,
+    StatsRange range, {
+    DateTime? now,
+  }) {
+    final today = now ?? DateTime.now();
+    if (range == StatsRange.all) return records;
+    return records.where((record) {
+      final date = DateTime.tryParse(record.date);
+      if (date == null) return false;
+      switch (range) {
+        case StatsRange.week:
+          final start = startOfWeek(today);
+          final end = start.add(const Duration(days: 7));
+          return !date.isBefore(start) && date.isBefore(end);
+        case StatsRange.month:
+          return date.year == today.year && date.month == today.month;
+        case StatsRange.year:
+          return date.year == today.year;
+        case StatsRange.all:
+          return true;
+      }
+    }).toList();
+  }
+
+  static DateTime startOfWeek(DateTime date) {
+    final onlyDate = DateTime(date.year, date.month, date.day);
+    return onlyDate.subtract(Duration(days: onlyDate.weekday - 1));
+  }
+
   static List<WorkoutRecord> filterRecordsByMonth(
     List<WorkoutRecord> records,
     DateTime target,
@@ -41,11 +91,26 @@ class StatsService {
     return filterRecordsByMonth(records, DateTime.now()).length;
   }
 
-  static Map<String, int> countBodyPartsThisMonth(List<WorkoutRecord> records) {
+  static Map<String, int> countBodyParts(List<WorkoutRecord> records) {
     final result = <String, int>{};
-    for (final record in filterRecordsByMonth(records, DateTime.now())) {
+    for (final record in records) {
       for (final part in record.bodyParts) {
         result[part] = (result[part] ?? 0) + 1;
+      }
+    }
+    return _sortedMap(result);
+  }
+
+  static Map<String, int> countBodyPartsThisMonth(List<WorkoutRecord> records) {
+    return countBodyParts(filterRecordsByMonth(records, DateTime.now()));
+  }
+
+  static Map<String, int> countExerciseFrequency(List<WorkoutRecord> records) {
+    final result = <String, int>{};
+    for (final record in records) {
+      for (final exercise in record.exercises) {
+        if (completedSets(exercise).isEmpty) continue;
+        result[exercise.name] = (result[exercise.name] ?? 0) + 1;
       }
     }
     return _sortedMap(result);
@@ -54,14 +119,7 @@ class StatsService {
   static Map<String, int> countExerciseFrequencyThisMonth(
     List<WorkoutRecord> records,
   ) {
-    final result = <String, int>{};
-    for (final record in filterRecordsByMonth(records, DateTime.now())) {
-      for (final exercise in record.exercises) {
-        if (completedSets(exercise).isEmpty) continue;
-        result[exercise.name] = (result[exercise.name] ?? 0) + 1;
-      }
-    }
-    return _sortedMap(result);
+    return countExerciseFrequency(filterRecordsByMonth(records, DateTime.now()));
   }
 
   static double calculateWorkoutWeightedVolume(WorkoutRecord record) {
@@ -79,7 +137,7 @@ class StatsService {
   }
 
   static double calculateBodyweightReps(List<WorkoutRecord> records) {
-    return filterRecordsByMonth(records, DateTime.now()).fold<double>(0, (
+    return records.fold<double>(0, (
       sum,
       record,
     ) {
@@ -99,7 +157,7 @@ class StatsService {
   }
 
   static int calculateTimedSeconds(List<WorkoutRecord> records) {
-    return filterRecordsByMonth(records, DateTime.now()).fold<int>(0, (
+    return records.fold<int>(0, (
       sum,
       record,
     ) {
@@ -117,10 +175,25 @@ class StatsService {
   }
 
   static double calculateWeightedVolumeThisMonth(List<WorkoutRecord> records) {
-    return filterRecordsByMonth(records, DateTime.now()).fold<double>(
+    return calculateWeightedVolume(filterRecordsByMonth(records, DateTime.now()));
+  }
+
+  static double calculateWeightedVolume(List<WorkoutRecord> records) {
+    return records.fold<double>(
       0,
       (sum, record) => sum + calculateWorkoutWeightedVolume(record),
     );
+  }
+
+  static List<String> exerciseNames(List<WorkoutRecord> records) {
+    final names = <String>{};
+    for (final record in records) {
+      for (final exercise in record.exercises) {
+        names.add(exercise.name);
+      }
+    }
+    final result = names.toList()..sort();
+    return result;
   }
 
   static List<ExerciseHistoryEntry> findExerciseHistory(

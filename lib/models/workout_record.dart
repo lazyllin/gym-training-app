@@ -8,6 +8,9 @@ class WorkoutRecord {
     required this.bodyParts,
     required this.status,
     this.durationMin,
+    this.startedAt,
+    this.finishedAt,
+    this.autoDurationMin,
     this.note = '',
     required this.exercises,
     required this.createdAt,
@@ -20,6 +23,9 @@ class WorkoutRecord {
   final List<String> bodyParts;
   final String status;
   final int? durationMin;
+  final String? startedAt;
+  final String? finishedAt;
+  final int? autoDurationMin;
   final String note;
   final List<ExerciseRecord> exercises;
   final String createdAt;
@@ -38,6 +44,9 @@ class WorkoutRecord {
           : const [],
       status: (json['status'] as String?) ?? '正常',
       durationMin: _toInt(json['durationMin']),
+      startedAt: json['startedAt'] as String?,
+      finishedAt: json['finishedAt'] as String?,
+      autoDurationMin: _toInt(json['autoDurationMin']),
       note: (json['note'] as String?) ?? '',
       exercises: rawExercises is List
           ? rawExercises
@@ -59,6 +68,9 @@ class WorkoutRecord {
       'bodyParts': bodyParts,
       'status': status,
       'durationMin': durationMin,
+      'startedAt': startedAt,
+      'finishedAt': finishedAt,
+      'autoDurationMin': autoDurationMin,
       'note': note,
       'exercises': exercises.map((item) => item.toJson()).toList(),
       'createdAt': createdAt,
@@ -74,6 +86,12 @@ class WorkoutRecord {
     String? status,
     int? durationMin,
     bool clearDurationMin = false,
+    String? startedAt,
+    bool clearStartedAt = false,
+    String? finishedAt,
+    bool clearFinishedAt = false,
+    int? autoDurationMin,
+    bool clearAutoDurationMin = false,
     String? note,
     List<ExerciseRecord>? exercises,
     String? createdAt,
@@ -86,6 +104,10 @@ class WorkoutRecord {
       bodyParts: bodyParts ?? this.bodyParts,
       status: status ?? this.status,
       durationMin: clearDurationMin ? null : durationMin ?? this.durationMin,
+      startedAt: clearStartedAt ? null : startedAt ?? this.startedAt,
+      finishedAt: clearFinishedAt ? null : finishedAt ?? this.finishedAt,
+      autoDurationMin:
+          clearAutoDurationMin ? null : autoDurationMin ?? this.autoDurationMin,
       note: note ?? this.note,
       exercises: exercises ?? this.exercises,
       createdAt: createdAt ?? this.createdAt,

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../models/app_preferences.dart';
 import '../models/exercise_definition.dart';
 import '../models/workout_record.dart';
 import 'sample_data_service.dart';
@@ -12,6 +13,7 @@ class StorageService {
   static const int schemaVersion = 1;
   static const String recordsFileName = 'workout_records.json';
   static const String exerciseLibraryFileName = 'exercise_library.json';
+  static const String preferencesFileName = 'app_preferences.json';
 
   Future<Directory> _directory() {
     return getApplicationDocumentsDirectory();
@@ -98,6 +100,34 @@ class StorageService {
       'exercises': exercises.map((item) => item.toJson()).toList(),
     };
     await _safeWrite(file, data);
+  }
+
+  Future<AppPreferences> readAppPreferences() async {
+    final file = await _file(preferencesFileName);
+    final defaults = AppPreferences.defaults();
+    await _ensureFile(file, {
+      'schemaVersion': schemaVersion,
+      'preferences': defaults.toJson(),
+    });
+    try {
+      final content = await file.readAsString();
+      if (content.trim().isEmpty) return defaults;
+      final decoded = jsonDecode(content);
+      if (decoded is! Map<String, dynamic>) return defaults;
+      final raw = decoded['preferences'];
+      if (raw is! Map) return defaults;
+      return AppPreferences.fromJson(Map<String, dynamic>.from(raw));
+    } catch (_) {
+      return defaults;
+    }
+  }
+
+  Future<void> saveAppPreferences(AppPreferences preferences) async {
+    final file = await _file(preferencesFileName);
+    await _safeWrite(file, {
+      'schemaVersion': schemaVersion,
+      'preferences': preferences.toJson(),
+    });
   }
 
   Future<String> exportBackup({

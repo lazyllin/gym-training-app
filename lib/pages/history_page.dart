@@ -26,6 +26,8 @@ class _HistoryPageState extends State<HistoryPage> {
     final appState = AppStateScope.watch(context);
     final filtered = _filter(appState.records);
     final grouped = _groupByMonth(filtered);
+    final parts = ['全部', ...appState.preferences.bodyParts];
+    if (!parts.contains(_selectedPart)) _selectedPart = '全部';
 
     return Scaffold(
       appBar: AppBar(title: const Text('记录')),
@@ -44,7 +46,7 @@ class _HistoryPageState extends State<HistoryPage> {
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
-                children: _parts.map((part) {
+                children: parts.map((part) {
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: ChoiceChip(
@@ -115,17 +117,4 @@ class _HistoryPageState extends State<HistoryPage> {
     }
     return grouped;
   }
-
-  static const List<String> _parts = [
-    '全部',
-    '背',
-    '腿',
-    '胸',
-    '肩',
-    '核心',
-    '臀',
-    '手臂',
-    '有氧',
-    '灵活性',
-  ];
 }

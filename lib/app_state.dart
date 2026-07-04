@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
+import 'models/app_preferences.dart';
 import 'models/exercise_definition.dart';
 import 'models/workout_record.dart';
+import 'services/history_import_service.dart';
 import 'services/storage_service.dart';
 
 class AppState extends ChangeNotifier {
@@ -14,6 +16,7 @@ class AppState extends ChangeNotifier {
 
   List<WorkoutRecord> records = [];
   List<ExerciseDefinition> exerciseLibrary = [];
+  AppPreferences preferences = AppPreferences.defaults();
   bool isLoading = true;
   String? errorMessage;
 
@@ -24,11 +27,14 @@ class AppState extends ChangeNotifier {
     try {
       final loadedRecords = await _storageService.readWorkoutRecords();
       final loadedLibrary = await _storageService.readExerciseLibrary();
+      final loadedPreferences = await _storageService.readAppPreferences();
       records = _sortRecords(loadedRecords);
       exerciseLibrary = loadedLibrary;
+      preferences = loadedPreferences;
     } catch (_) {
       records = [];
       exerciseLibrary = [];
+      preferences = AppPreferences.defaults();
       errorMessage = '训练数据读取失败，已进入空数据模式';
     } finally {
       isLoading = false;
@@ -85,6 +91,78 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updatePreferences(AppPreferences next) async {
+    preferences = next;
+    await _storageService.saveAppPreferences(preferences);
+    notifyListeners();
+  }
+
+  Future<void> addPreferenceValue(String group, String value) async {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return;
+    switch (group) {
+      case 'titles':
+        await updatePreferences(
+          preferences.copyWith(
+              titles: _appendUnique(preferences.titles, trimmed)),
+        );
+        return;
+      case 'bodyParts':
+        await updatePreferences(
+          preferences.copyWith(
+            bodyParts: _appendUnique(preferences.bodyParts, trimmed),
+          ),
+        );
+        return;
+      case 'statuses':
+        await updatePreferences(
+          preferences.copyWith(
+            statuses: _appendUnique(preferences.statuses, trimmed),
+          ),
+        );
+        return;
+    }
+  }
+
+  Future<void> removePreferenceValue(String group, String value) async {
+    switch (group) {
+      case 'titles':
+        await updatePreferences(
+          preferences.copyWith(
+            titles: _removeKeepingOne(preferences.titles, value),
+          ),
+        );
+        return;
+      case 'bodyParts':
+        await updatePreferences(
+          preferences.copyWith(
+            bodyParts: _removeKeepingOne(preferences.bodyParts, value),
+          ),
+        );
+        return;
+      case 'statuses':
+        await updatePreferences(
+          preferences.copyWith(
+            statuses: _removeKeepingOne(preferences.statuses, value),
+          ),
+        );
+        return;
+    }
+  }
+
+  Future<HistoryImportResult> importBundledHistory() async {
+    final importer = HistoryImportService();
+    final imported = await importer.readBundledHistory();
+    final existingIds = records.map((record) => record.id).toSet();
+    final fresh =
+        imported.where((record) => !existingIds.contains(record.id)).toList();
+    records = _sortRecords([...records, ...fresh]);
+    await _storageService.saveWorkoutRecords(records);
+    notifyListeners();
+    return HistoryImportResult(
+        records: fresh, skipped: imported.length - fresh.length);
+  }
+
   Future<String> exportJson() {
     return _storageService.exportBackup(
       records: records,
@@ -115,6 +193,17 @@ class AppState extends ChangeNotifier {
       return b.updatedAt.compareTo(a.updatedAt);
     });
     return sorted;
+  }
+
+  List<String> _appendUnique(List<String> source, String value) {
+    if (source.contains(value)) return source;
+    return [...source, value];
+  }
+
+  List<String> _removeKeepingOne(List<String> source, String value) {
+    if (source.length <= 1) return source;
+    final next = source.where((item) => item != value).toList();
+    return next.isEmpty ? source : next;
   }
 }
 

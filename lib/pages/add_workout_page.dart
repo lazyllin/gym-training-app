@@ -34,6 +34,7 @@ class _AddWorkoutPageState extends State<AddWorkoutPage> {
   late List<ExerciseRecord> _exercises;
   late TextEditingController _durationController;
   late TextEditingController _noteController;
+  final Map<String, int> _currentSetIndexes = {};
   bool _saving = false;
 
   bool get _isEditing => widget.initialRecord != null;
@@ -132,6 +133,10 @@ class _AddWorkoutPageState extends State<AddWorkoutPage> {
   }
 
   Widget _basicInfoCard() {
+    final preferences = AppStateScope.watch(context).preferences;
+    final titles = _optionsWithSelected(preferences.titles, _title);
+    final parts = _optionsWithSelected(preferences.bodyParts, _bodyParts);
+
     return IosCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -149,7 +154,7 @@ class _AddWorkoutPageState extends State<AddWorkoutPage> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _titles.map((title) {
+            children: titles.map((title) {
               return ChoiceChip(
                 label: Text(title),
                 selected: _title == title,
@@ -163,7 +168,7 @@ class _AddWorkoutPageState extends State<AddWorkoutPage> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _parts.map((part) {
+            children: parts.map((part) {
               final selected = _bodyParts.contains(part);
               return FilterChip(
                 label: Text(part),
@@ -180,28 +185,10 @@ class _AddWorkoutPageState extends State<AddWorkoutPage> {
               );
             }).toList(),
           ),
-          const SizedBox(height: 16),
-          const Text('训练状态', style: TextStyle(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _statuses.map((status) {
-              return ChoiceChip(
-                label: Text(status),
-                selected: _status == status,
-                onSelected: (_) => setState(() => _status = status),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _durationController,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: '训练时长min',
-              hintText: '可选',
-            ),
+          const SizedBox(height: 12),
+          const Text(
+            '状态和训练时长会在保存前确认。',
+            style: TextStyle(color: AppTheme.textSecondary),
           ),
         ],
       ),
@@ -209,7 +196,7 @@ class _AddWorkoutPageState extends State<AddWorkoutPage> {
   }
 
   Widget _exerciseCard(int exerciseIndex, ExerciseRecord exercise) {
-    final currentSetIndex = _currentSetIndex(exercise);
+    final currentSetIndex = _currentSetIndex(exerciseIndex, exercise);
     final currentSet = exercise.sets[currentSetIndex];
     final completedCount = exercise.sets.where((set) => set.completed).length;
     final completedSets = exercise.sets
@@ -279,26 +266,6 @@ class _AddWorkoutPageState extends State<AddWorkoutPage> {
             }),
           ],
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _addSet(exerciseIndex),
-                  icon: const Icon(Icons.add),
-                  label: const Text('添加一组'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _copyLastSet(exerciseIndex),
-                  icon: const Icon(Icons.copy_outlined),
-                  label: const Text('复制上一组'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
           TextFormField(
             initialValue: exercise.note,
             minLines: 2,
@@ -327,13 +294,24 @@ class _AddWorkoutPageState extends State<AddWorkoutPage> {
         border: Border.all(color: AppTheme.border),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
-            child: Text(
-              '第${set.setIndex}组 ${_setSummary(_exercises[exerciseIndex].type, set)}'
-              '${set.completedAt == null ? '' : ' · ${_clock(set.completedAt!)}完成'}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '第${set.setIndex}组 ${_setSummary(_exercises[exerciseIndex].type, set)}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  set.completedAt == null
+                      ? '历史导入记录，无完成时间'
+                      : '${_clock(set.completedAt!)} 完成',
+                  style: const TextStyle(color: AppTheme.textSecondary),
+                ),
+              ],
             ),
           ),
           TextButton(
@@ -393,37 +371,13 @@ class _AddWorkoutPageState extends State<AddWorkoutPage> {
     });
   }
 
-  void _addSet(int exerciseIndex) {
-    final exercise = _exercises[exerciseIndex];
-    final now = DateTime.now().toIso8601String();
-    final sets = [
-      ...exercise.sets,
-      _defaultSet(
-        exercise.type,
-        exercise.sets.length + 1,
-        createdAt: now,
-      ),
-    ];
-    _replaceExercise(exerciseIndex, exercise.copyWith(sets: _reindex(sets)));
-  }
-
-  void _copyLastSet(int exerciseIndex) {
-    final exercise = _exercises[exerciseIndex];
-    final now = DateTime.now().toIso8601String();
-    final last = exercise.sets.isEmpty
-        ? _defaultSet(exercise.type, 1, createdAt: now)
-        : exercise.sets.last;
-    final sets = [
-      ...exercise.sets,
-      _copyAsNextSet(last, exercise.sets.length + 1, now),
-    ];
-    _replaceExercise(exerciseIndex, exercise.copyWith(sets: _reindex(sets)));
-  }
-
   void _deleteSet(int exerciseIndex, int setIndex) {
     final exercise = _exercises[exerciseIndex];
     if (exercise.sets.length <= 1) return;
     final sets = [...exercise.sets]..removeAt(setIndex);
+    _currentSetIndexes[exercise.id] =
+        ((_currentSetIndexes[exercise.id] ?? 0).clamp(0, sets.length - 1))
+            .toInt();
     _replaceExercise(exerciseIndex, exercise.copyWith(sets: _reindex(sets)));
   }
 
@@ -451,6 +405,10 @@ class _AddWorkoutPageState extends State<AddWorkoutPage> {
 
     if (setIndex == sets.length - 1) {
       sets.add(_copyAsNextSet(sets[setIndex], sets.length + 1, now));
+      _currentSetIndexes[exercise.id] = sets.length - 1;
+    } else {
+      final nextOpen = sets.indexWhere((set) => !set.completed);
+      _currentSetIndexes[exercise.id] = nextOpen >= 0 ? nextOpen : setIndex;
     }
 
     _replaceExercise(exerciseIndex, exercise.copyWith(sets: _reindex(sets)));
@@ -465,6 +423,7 @@ class _AddWorkoutPageState extends State<AddWorkoutPage> {
       clearCompletedAt: true,
       updatedAt: now,
     );
+    _currentSetIndexes[exercise.id] = setIndex;
     _replaceExercise(exerciseIndex, exercise.copyWith(sets: _reindex(sets)));
   }
 
@@ -531,7 +490,11 @@ class _AddWorkoutPageState extends State<AddWorkoutPage> {
     );
   }
 
-  int _currentSetIndex(ExerciseRecord exercise) {
+  int _currentSetIndex(int exerciseIndex, ExerciseRecord exercise) {
+    final selected = _currentSetIndexes[exercise.id];
+    if (selected != null && selected >= 0 && selected < exercise.sets.length) {
+      return selected;
+    }
     final firstOpen = exercise.sets.indexWhere((set) => !set.completed);
     if (firstOpen >= 0) return firstOpen;
     return exercise.sets.length - 1;
@@ -574,11 +537,17 @@ class _AddWorkoutPageState extends State<AddWorkoutPage> {
       return;
     }
 
+    final confirmed = await _confirmBeforeSave();
+    if (confirmed != true) return;
+
     setState(() => _saving = true);
     final now = DateTime.now().toIso8601String();
     final initial = widget.initialRecord;
-    final duration = int.tryParse(_durationController.text.trim());
     final exercises = _exercises.map(_pruneTrailingOpenSet).toList();
+    final autoRange = _workoutTimeRange(exercises);
+    final autoDuration = _autoDurationMin(autoRange);
+    final manualDuration = int.tryParse(_durationController.text.trim());
+    final duration = manualDuration ?? autoDuration;
     final record = WorkoutRecord(
       id: initial?.id ?? appState.nextId('workout'),
       date: AppDateUtils.formatDate(_date),
@@ -586,6 +555,9 @@ class _AddWorkoutPageState extends State<AddWorkoutPage> {
       bodyParts: _bodyParts,
       status: _status,
       durationMin: duration,
+      startedAt: autoRange.$1,
+      finishedAt: autoRange.$2,
+      autoDurationMin: autoDuration,
       note: _noteController.text.trim(),
       exercises: exercises,
       createdAt: initial?.createdAt ?? now,
@@ -638,6 +610,98 @@ class _AddWorkoutPageState extends State<AddWorkoutPage> {
     return null;
   }
 
+  Future<bool?> _confirmBeforeSave() async {
+    final preferences = AppStateScope.read(context).preferences;
+    final statuses = _optionsWithSelected(preferences.statuses, _status);
+    final exercises = _exercises.map(_pruneTrailingOpenSet).toList();
+    final autoDuration = _autoDurationMin(_workoutTimeRange(exercises));
+    final controller = TextEditingController(
+      text: _durationController.text.trim().isNotEmpty
+          ? _durationController.text.trim()
+          : autoDuration?.toString() ?? '',
+    );
+    var selectedStatus = _status.isEmpty ? statuses.first : _status;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('保存前确认'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '训练状态',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: statuses.map((status) {
+                        return ChoiceChip(
+                          label: Text(status),
+                          selected: selectedStatus == status,
+                          onSelected: (_) {
+                            setDialogState(() => selectedStatus = status);
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      autoDuration == null
+                          ? '自动时长：暂无完成时间'
+                          : '自动时长：$autoDuration 分钟',
+                      style: const TextStyle(color: AppTheme.textSecondary),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: controller,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '训练时长min',
+                        hintText: '可手动修正',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final raw = controller.text.trim();
+                    if (raw.isNotEmpty) {
+                      final duration = int.tryParse(raw);
+                      if (duration == null || duration < 0) return;
+                    }
+                    Navigator.of(dialogContext).pop(true);
+                  },
+                  child: const Text('保存'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result == true) {
+      _status = selectedStatus;
+      _durationController.text = controller.text.trim();
+    }
+    controller.dispose();
+    return result;
+  }
+
   ExerciseRecord _pruneTrailingOpenSet(ExerciseRecord exercise) {
     final sets = [...exercise.sets];
     while (sets.length > 1 &&
@@ -648,36 +712,42 @@ class _AddWorkoutPageState extends State<AddWorkoutPage> {
     return exercise.copyWith(sets: _reindex(sets));
   }
 
-  static const List<String> _titles = [
-    '背部训练',
-    '腿部训练',
-    '胸部训练',
-    '肩部训练',
-    '核心训练',
-    '全身训练',
-    '功能性训练',
-    '恢复训练',
-    '有氧训练',
-    '自定义',
-  ];
+  (String?, String?) _workoutTimeRange(List<ExerciseRecord> exercises) {
+    final starts = <DateTime>[];
+    final finishes = <DateTime>[];
+    for (final exercise in exercises) {
+      for (final set in exercise.sets) {
+        final createdAt = DateTime.tryParse(set.createdAt ?? '');
+        if (createdAt != null) starts.add(createdAt);
+        final completedAt = DateTime.tryParse(set.completedAt ?? '');
+        if (completedAt != null) finishes.add(completedAt);
+      }
+    }
+    if (starts.isEmpty || finishes.isEmpty) return (null, null);
+    starts.sort();
+    finishes.sort();
+    return (starts.first.toIso8601String(), finishes.last.toIso8601String());
+  }
 
-  static const List<String> _parts = [
-    '背',
-    '腿',
-    '胸',
-    '肩',
-    '核心',
-    '臀',
-    '手臂',
-    '有氧',
-    '灵活性',
-  ];
+  int? _autoDurationMin((String?, String?) range) {
+    final start = DateTime.tryParse(range.$1 ?? '');
+    final finish = DateTime.tryParse(range.$2 ?? '');
+    if (start == null || finish == null || finish.isBefore(start)) return null;
+    final seconds = finish.difference(start).inSeconds;
+    if (seconds <= 0) return 1;
+    return (seconds / 60).ceil();
+  }
 
-  static const List<String> _statuses = [
-    '正常',
-    '疲劳',
-    '疼痛',
-    '恢复',
-    '未完成',
-  ];
+  List<String> _optionsWithSelected(List<String> source, Object selected) {
+    final result = source.toSet().toList();
+    if (selected is String && selected.trim().isNotEmpty) {
+      if (!result.contains(selected)) result.add(selected);
+    }
+    if (selected is List<String>) {
+      for (final item in selected) {
+        if (item.trim().isNotEmpty && !result.contains(item)) result.add(item);
+      }
+    }
+    return result;
+  }
 }
